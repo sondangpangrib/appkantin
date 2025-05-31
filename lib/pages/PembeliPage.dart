@@ -51,7 +51,7 @@ class _PembeliPageState extends State<PembeliPage> {
 
   Future<void> _fetchKategori() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/pembeli'));
+      final response = await http.get(Uri.parse('$baseUrl/user_group/pembeli'));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         setState(() {

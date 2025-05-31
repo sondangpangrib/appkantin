@@ -65,6 +65,6 @@ class BluetoothPrinterService {
     printer.printCustom('Terima kasih 🙏', 1, 1);
     printer.printNewLine();
     printer.printNewLine();
-    printer.paperCut(); // jika printer mendukung
+    //printer.paperCut(); // jika printer mendukung
   }
 }

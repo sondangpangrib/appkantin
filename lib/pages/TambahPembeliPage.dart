@@ -25,8 +25,8 @@ class _TambahPembeliPageState extends State<TambahPembeliPage> {
   }
 
   Future<void> _fetchGroups() async {
-    final response =
-        await http.get(Uri.parse('${cfg.GlobalConfig.baseUrl}/user_group'));
+    final response = await http
+        .get(Uri.parse('${cfg.GlobalConfig.baseUrl}/user_group/pembeli'));
     if (response.statusCode == 200) {
       setState(() {
         groupList = json.decode(response.body);
