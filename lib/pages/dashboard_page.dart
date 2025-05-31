@@ -9,6 +9,7 @@ import 'LaporanPenjualanPage.dart';
 import 'LaporanPengeluaranPage.dart';
 import 'ManajemenUserPage.dart';
 import 'ManajemenTokoPage.dart';
+import 'global_config.dart' as cfg;
 
 class DashboardPage extends StatefulWidget {
   @override

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'global_config.dart' as cfg;
 
 class TransaksiPage extends StatefulWidget {
   @override

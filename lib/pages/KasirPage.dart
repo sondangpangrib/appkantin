@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/bluetooth_printer_service.dart';
+import 'global_config.dart' as cfg;
 
 class KasirPage extends StatefulWidget {
   @override
