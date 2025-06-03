@@ -1,3 +1,4 @@
+import 'package:appkantin/services/BluetoothValidator.dart';
 import 'package:appkantin/services/bluetooth_printer_service.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -25,12 +26,26 @@ class _KasirPageState extends State<KasirPage> {
   List<Map<String, dynamic>> orderList = [];
   dynamic selectedPembeli;
 
+  String namaToko = "";
+  String alamat = "";
+  String telp = "";
+
+  void __initData() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      namaToko = prefs.getString('nama_toko') ?? '';
+      alamat = prefs.getString('alamat_toko') ?? '';
+      telp = prefs.getString('telp_wa_toko') ?? '';
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _fetchServerDate();
     _fetchPembeli();
     _fetchProduk();
+    __initData();
   }
 
   Future<void> _selectDate() async {
@@ -222,89 +237,6 @@ class _KasirPageState extends State<KasirPage> {
     );
   }
 
-/*
-  Future<void> _saveDraft() async {
-    if (orderList.isEmpty) {
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: Text("Order tidak boleh kosong!!"),
-          actions: [
-            TextButton(
-                child: Text("OK"), onPressed: () => Navigator.pop(context))
-          ],
-        ),
-      );
-      return;
-    }
-
-    if (paymentMethod == 'Hutang' && selectedPembeli == null) {
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: Text("Pembayaran hutang harus pilih pembeli!!"),
-          actions: [
-            TextButton(
-                child: Text("OK"), onPressed: () => Navigator.pop(context))
-          ],
-        ),
-      );
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text("Yakin simpan order ini sebagai draft?"),
-        actions: [
-          TextButton(
-              child: Text("Tidak"), onPressed: () => Navigator.pop(context)),
-          ElevatedButton(
-            child: Text("Ya"),
-            onPressed: () async {
-              Navigator.pop(context);
-              final draftData = {
-                'tanggal': selectedDate.toIso8601String(),
-                'metode': paymentMethod,
-                'diskon': discount,
-                'total': total - (total * discount / 100),
-                'pembeli_id': selectedPembeli != null
-                    ? selectedPembeli['id_pembeli']
-                    : null,
-                'items': orderList,
-              };
-              try {
-                final response = await http.post(
-                  Uri.parse('$baseUrl/penjualan/draft'),
-                  headers: {"Content-Type": "application/json"},
-                  body: json.encode(draftData),
-                );
-                if (response.statusCode == 200) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Draft berhasil disimpan")));
-                  setState(() {
-                    orderList.clear();
-                    selectedPembeli = null;
-                    discount = 0;
-                    total = 0;
-                  });
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Gagal simpan draft")));
-                }
-              } catch (e) {
-                ScaffoldMessenger.of(context)
-                    .showSnackBar(SnackBar(content: Text("Error: $e")));
-              }
-            },
-          )
-        ],
-      ),
-    );
-  }
-  */
-  /// ======== _saveDraft ======///
-
   Future<void> _saveDraft() async {
     if (orderList.isEmpty) {
       _showMessage("Order tidak boleh kosong !!");
@@ -345,10 +277,20 @@ class _KasirPageState extends State<KasirPage> {
   Future<void> simpanTransaksiKeServer(int status) async {
     final prefs = await SharedPreferences.getInstance();
     final __iduser = prefs.getInt('id_user');
+    final now = DateTime.now();
+    final tanggalDenganWaktu = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+      now.hour,
+      now.minute,
+      now.second,
+    );
     final payload = {
       'id_seles': __iduser,
       'id_transaksi': DateTime.now().millisecondsSinceEpoch.toString(),
-      'tanggal_transaksi': DateFormat('yyyy-MM-dd').format(selectedDate),
+      'tanggal_transaksi':
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(tanggalDenganWaktu),
       'id_pembeli': selectedPembeli?['id_pembeli'],
       'nama_pembeli': selectedPembeli?['pembeli_nama'],
       'metode_pembayaran': _metodeBayarKeKode(paymentMethod),
@@ -394,19 +336,29 @@ class _KasirPageState extends State<KasirPage> {
         );
 
         if (shouldPrint == true) {
+          final isValid = await BluetoothValidator.validate(context: context);
+          if (!isValid) return;
           final printer = BluetoothPrinterService();
+          print("🧾 ITEM DEBUG:");
+          orderList.forEach((item) {
+            print(
+                "Nama: ${item['nama']}, Qty: ${item['qty']}, Harga: ${item['harga_jual'] ?? item['harga']}");
+          });
+
+          final _tanggal = DateFormat('dd-MM-yyyy').format(tanggalDenganWaktu);
+
           await printer.printNota(
-            toko: "Nama Toko", // ganti sesuai kebutuhan
-            alamat: "Jl. Contoh No.1",
-            telp: "0812-xxxx-xxxx",
-            tanggal: DateFormat('dd-MM-yyyy').format(selectedDate),
+            toko: namaToko, // ganti sesuai kebutuhan
+            alamat: alamat,
+            telp: telp,
+            tanggal: _tanggal,
             diskon: discount,
             total: _hitungTotalSetelahDiskon(),
             items: orderList
                 .map((item) => {
-                      'nama': item['nama_produk'],
+                      'nama': item['nama_produk'] ?? item['nama'] ?? '-',
                       'qty': item['qty'],
-                      'harga': item['harga'],
+                      'harga': item['harga_jual'] ?? item['harga'] ?? 0,
                     })
                 .toList(),
           );
@@ -653,6 +605,17 @@ class _KasirPageState extends State<KasirPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  OutlinedButton(
+                    onPressed: () {
+                      setState(() {
+                        orderList.clear();
+                        total = 0;
+                        discount = 0;
+                        selectedPembeli = null;
+                      });
+                    },
+                    child: Text("Reset"),
+                  ),
                   OutlinedButton(
                     onPressed: () {
                       print("Isi orderList: $orderList");

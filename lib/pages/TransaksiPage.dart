@@ -1,10 +1,26 @@
+import 'dart:io';
+import 'package:appkantin/pages/helper/NotaShareHelper.dart';
+import 'package:appkantin/pages/widgets/nota_widget.dart';
+import 'package:appkantin/printersetting.dart';
+import 'package:appkantin/services/BluetoothValidator.dart';
+import 'package:appkantin/services/bluetooth_printer_service.dart';
+import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:intl/intl.dart';
+import 'package:screenshot/screenshot.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:simple_loading_dialog/simple_loading_dialog.dart';
 import 'global_config.dart' as cfg;
 import 'DetailTransaksi.dart';
 import 'EditKasirPage.dart';
+import 'NotaPreviewPage.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:ui' as ui;
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 class TransaksiPage extends StatefulWidget {
   @override
@@ -19,14 +35,229 @@ class _TransaksiPageState extends State<TransaksiPage> {
   DateTime? dari;
   DateTime? sampai;
   String baseUrl = cfg.GlobalConfig.baseUrl;
+  String namaToko = "";
+  String alamat = "";
+  String telp = "";
 
   final TextEditingController _searchController = TextEditingController();
   final DateFormat formatter = DateFormat('yyyy-MM-dd');
+  void __initData() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      namaToko = prefs.getString('nama_toko') ?? '';
+      alamat = prefs.getString('alamat_toko') ?? '';
+      telp = prefs.getString('telp_wa_toko') ?? '';
+    });
+  }
+
+  String formatRupiah(dynamic number) {
+    final formatter =
+        NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    return formatter.format(number ?? 0);
+  }
 
   @override
   void initState() {
     super.initState();
     fetchTransaksi();
+    __initData();
+    //initPlatformState();
+  }
+
+  Future<void> shareNotaLangsungSilently({
+    required Map<String, dynamic> transaksi,
+    required List<dynamic> items,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final namaToko = prefs.getString('nama_toko') ?? '';
+    final alamat = prefs.getString('alamat_toko') ?? '';
+    final telp = prefs.getString('telp_wa_toko') ?? '';
+
+    final controller = ScreenshotController();
+
+    final capturedWidget = WidgetsApp(
+      color: Colors.white,
+      builder: (context, _) {
+        return MediaQuery(
+          data: MediaQueryData(
+            size: Size(1080, 5000), // Buat tinggi besar agar tidak terpotong
+            devicePixelRatio: 2.0,
+          ),
+          child: Localizations(
+            locale: Locale('id', 'ID'),
+            delegates: GlobalMaterialLocalizations.delegates,
+            child: Directionality(
+              textDirection: ui.TextDirection.ltr,
+              child: Builder(
+                builder: (context) {
+                  return Material(
+                    color: Colors.white,
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: NotaWidget(
+                          transaksi: transaksi,
+                          items: items,
+                          namaToko: namaToko,
+                          alamat: alamat,
+                          telp: telp,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      final image = await controller.captureFromWidget(
+        capturedWidget,
+        delay: Duration(milliseconds: 300),
+        pixelRatio: 2.0,
+      );
+
+      if (image == null) {
+        print("❌ Gagal capture");
+        return;
+      }
+
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/nota-${transaksi['id_transaksi']}.png');
+      file.writeAsBytesSync(image);
+      await Share.shareXFiles([XFile(file.path)], text: 'Nota Transaksi');
+    } catch (e) {
+      print("❌ Error: $e");
+    }
+  }
+
+  Future<void> __getDetail(int id_penjualan) async {
+    Map<String, dynamic>? transaksi;
+    List<dynamic> items = [];
+
+    final result = await showSimpleLoadingDialog<String>(
+      context: context,
+      future: () async {
+        final url =
+            '${cfg.GlobalConfig.baseUrl}/penjualan/detail?id_penjualan=$id_penjualan';
+
+        try {
+          final res = await http.get(Uri.parse(url));
+          if (res.statusCode == 200) {
+            final data = json.decode(res.body);
+            if (data['transaksi'] != null) {
+              transaksi = data['transaksi'];
+              items = data['items'];
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content:
+                      Text('Gagal dapatkan data (status ${res.statusCode})')),
+            );
+          }
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+
+        return 'done';
+      },
+    );
+
+    // ✅ Lakukan navigasi setelah dialog tertutup
+    if (transaksi != null) {
+      /*
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => NotaPreviewPage(
+            transaksi: transaksi!,
+            items: items,
+          ),
+        ),
+      );*/
+
+      await shareNotaLangsungSilently(transaksi: transaksi!, items: items);
+    }
+  }
+
+  Future<void> __doPrint(int id_penjualan) async {
+    Map<String, dynamic>? transaksi;
+    List<dynamic> items = [];
+
+    final result = await showSimpleLoadingDialog<String>(
+      context: context,
+      future: () async {
+        final url =
+            '${cfg.GlobalConfig.baseUrl}/penjualan/detail?id_penjualan=$id_penjualan';
+
+        try {
+          final res = await http.get(Uri.parse(url));
+          if (res.statusCode == 200) {
+            final data = json.decode(res.body);
+            if (data['transaksi'] != null) {
+              transaksi = data['transaksi'];
+              items = data['items'];
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content:
+                      Text('Gagal dapatkan data (status ${res.statusCode})')),
+            );
+          }
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+
+        return 'done';
+      },
+    );
+
+    // ✅ Lakukan navigasi setelah dialog tertutup
+    if (transaksi != null) {
+      final trx = transaksi;
+      final _tanggal = DateFormat('dd-MM-yyyy')
+          .format(DateTime.parse('${trx?['tanggal_transaksi']}'));
+
+      double diskon = (trx?['diskon'] as num).toDouble();
+      int _total = (trx?['total_transaksi'] ?? 0);
+
+      print("NOTA ${namaToko} - ${alamat} - ${_tanggal}");
+      print("NOTA2 ${diskon.toString()} - ${_total}");
+      print("🔊 Mencetak nota...");
+
+      final isValid = await BluetoothValidator.validate(context: context);
+      if (!isValid) return;
+      final printer = BluetoothPrinterService();
+      print("🧾 ITEM DEBUG:");
+      items.forEach((item) {
+        print(
+            "Nama: ${item['nama']}, Qty: ${item['qty']}, Harga: ${item['harga_jual'] ?? item['harga']}");
+      });
+      await printer.printNota(
+        toko: namaToko, // ganti sesuai kebutuhan
+        alamat: alamat,
+        telp: telp,
+        tanggal: _tanggal,
+        diskon: diskon,
+        total: _total.toDouble(),
+        items: items
+            .map((item) => {
+                  'nama': item['nama_produk'] ?? item['nama'] ?? '-',
+                  'qty': item['qty'],
+                  'harga': item['harga_jual'] ?? item['harga'] ?? 0,
+                })
+            .toList(),
+      );
+    }
   }
 
   Future<void> fetchTransaksi() async {
@@ -111,21 +342,15 @@ class _TransaksiPageState extends State<TransaksiPage> {
     return Card(
       margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      clipBehavior: Clip.antiAlias,
       elevation: 2,
       child: Column(
         children: [
           ListTile(
             onTap: () {
-              if (status == 1) {
-                /*
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        EditKasirPage(idTransaksi: trx['id_transaksi']),
-                  ),
-                );*/
-              }
+              setState(() {
+                expandedList[index] = !expandedList[index];
+              });
             },
             title: Text(
               trx['nama_pembeli'] ?? '-',
@@ -136,28 +361,6 @@ class _TransaksiPageState extends State<TransaksiPage> {
               children: [
                 Text('ID: ${trx['id_transaksi']}'),
                 Text('Tanggal: ${trx['tanggal_transaksi']}'),
-                Row(
-                  children: [
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: getStatusColor(status),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(getStatusLabel(status),
-                          style: TextStyle(color: Colors.white, fontSize: 12)),
-                    ),
-                    SizedBox(width: 8),
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(metode, style: TextStyle(fontSize: 12)),
-                    ),
-                  ],
-                ),
               ],
             ),
             trailing: IconButton(
@@ -171,15 +374,38 @@ class _TransaksiPageState extends State<TransaksiPage> {
               },
             ),
           ),
+          Container(
+            width: double.infinity,
+            color: getStatusColor(status), // background merah
+            padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+            child: Row(
+              mainAxisAlignment:
+                  MainAxisAlignment.spaceBetween, // biar ada jarak antar teks
+              children: [
+                Text(
+                  'Total: ${formatRupiah(total)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white, // teks putih
+                  ),
+                ),
+                Text(
+                  'Net: ${formatRupiah(net)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white, // teks putih
+                  ),
+                ),
+              ],
+            ),
+          ),
           if (expanded)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
               child: Row(
                 children: [
-                  ElevatedButton.icon(
-                    style:
-                        ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-                    onPressed: () {
+                  InkWell(
+                    onTap: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -188,17 +414,89 @@ class _TransaksiPageState extends State<TransaksiPage> {
                         ),
                       );
                     },
-                    icon: Icon(Icons.remove_red_eye),
-                    label: Text("Detail"),
+                    child: Container(
+                      padding: EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.remove_red_eye, color: Colors.white),
+                    ),
                   ),
-                  Spacer(),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                  SizedBox(width: 5),
+                  InkWell(
+                    onTap: () async {
+                      __getDetail(trx['id_penjualan']);
+                    },
+                    child: Container(
+                      padding: EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color.fromARGB(255, 9, 204, 64),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.share_rounded, color: Colors.white),
+                    ),
+                  ),
+                  SizedBox(width: 5),
+                  InkWell(
+                    onTap: () async {
+                      __doPrint(trx['id_penjualan']);
+                    },
+                    child: Container(
+                      padding: EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color.fromARGB(255, 247, 50, 247),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.print, color: Colors.white),
+                    ),
+                  ),
+                  SizedBox(width: 5),
+                  Visibility(
+                    visible: (status == 1) ? true : false,
+                    child: InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => EditKasirPage(transaksi: trx),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color.fromARGB(255, 232, 18, 121),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.edit, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 15),
+                  Row(
                     children: [
-                      Text('Total: Rp${total.toStringAsFixed(0)}',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text('Net: Rp${net.toStringAsFixed(0)}',
-                          style: TextStyle(fontSize: 12)),
+                      Container(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: getStatusColor(status),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(getStatusLabel(status),
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 12)),
+                      ),
+                      SizedBox(width: 8),
+                      Container(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(metode, style: TextStyle(fontSize: 12)),
+                      ),
                     ],
                   ),
                 ],

@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'global_config.dart' as cfg;
 
 class NotaPreviewPage extends StatefulWidget {
@@ -19,8 +20,12 @@ class NotaPreviewPage extends StatefulWidget {
 
 class _NotaPreviewPageState extends State<NotaPreviewPage> {
   final ScreenshotController screenshotController = ScreenshotController();
+
   final currency =
       NumberFormat.currency(locale: 'id_ID', symbol: 'Rp', decimalDigits: 0);
+  String namaToko = "";
+  String alamat = "";
+  String telp = "";
 
   Future<void> _shareScreenshot() async {
     final Uint8List? image = await screenshotController.capture();
@@ -31,6 +36,21 @@ class _NotaPreviewPageState extends State<NotaPreviewPage> {
     final file = File(path)..writeAsBytesSync(image);
 
     Share.shareXFiles([XFile(file.path)], text: 'Nota Transaksi');
+  }
+
+  void __initData() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      namaToko = prefs.getString('nama_toko') ?? '';
+      alamat = prefs.getString('alamat_toko') ?? '';
+      telp = prefs.getString('telp_wa_toko') ?? '';
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    __initData();
   }
 
   @override
@@ -58,9 +78,17 @@ class _NotaPreviewPageState extends State<NotaPreviewPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Center(
-                  child: Text("NOTA TRANSAKSI",
-                      style: TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold))),
+                  child: Column(
+                children: [
+                  const Text("NOTA TRANSAKSI",
+                      style:
+                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  Text("${namaToko} : ${alamat} WA/TELP: ${namaToko}",
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 12))
+                ],
+              )),
               Divider(thickness: 2),
               _infoRow("ID Transaksi", trx['id_transaksi']),
               _infoRow("Tanggal", trx['tanggal_transaksi']),
@@ -106,7 +134,7 @@ class _NotaPreviewPageState extends State<NotaPreviewPage> {
       child: ListTile(
         leading: item['foto'] != null
             ? Image.network(
-                '${cfg.GlobalConfig.baseUrl}/uploads/foto/${item['foto']}',
+                '${cfg.GlobalConfig.baseUrl}/img/${item['foto']}?format=jpeg&height=150&crop=cover',
                 width: 50,
                 height: 50)
             : Icon(Icons.image),

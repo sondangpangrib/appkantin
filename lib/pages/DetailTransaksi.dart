@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'NotaPreviewPage.dart';
 import 'global_config.dart' as cfg;
 
 class DetailTransaksiPage extends StatefulWidget {
@@ -227,7 +228,31 @@ class _DetailTransaksiPageState extends State<DetailTransaksiPage> {
                           ],
                         ),
                       ),
+
                       SizedBox(height: 20),
+
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Center(
+                            child: Expanded(
+                                child: ElevatedButton.icon(
+                          icon: Icon(Icons.receipt_long),
+                          label: Text("Share Nota"),
+                          onPressed: () {
+                            if (transaksi != null) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => NotaPreviewPage(
+                                    transaksi: transaksi!,
+                                    items: items,
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                        ))),
+                      )
                     ],
                   ),
                 ),
